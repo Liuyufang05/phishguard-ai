@@ -4,7 +4,7 @@ from urllib.parse import urlparse
 
 import joblib
 import pandas as pd
-from backend.feature_extractor import extract_features
+from feature_extractor import extract_features
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
