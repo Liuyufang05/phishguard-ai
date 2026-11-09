@@ -52,6 +52,19 @@ app = FastAPI(
     debug=DEBUG
 )
 
+# CẤU HÌNH CORS CHO CLOUDFLARE VÀ LOCALHOST
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "https://phishguard-ai-9x8.pages.dev",
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+    ],
+    allow_credentials=False,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
