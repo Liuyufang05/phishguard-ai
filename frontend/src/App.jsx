@@ -37,8 +37,7 @@ useEffect(() => {
     setResult(null);
 
     try {
-      const response = await fetch(
-        "https://phishguard-ai-4ubb.onrender.com/api/scan", {
+      const response = await fetch("https://phishguard-ai-4ubb.onrender.com/api/scan", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
