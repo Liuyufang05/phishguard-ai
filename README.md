@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 # 🛡️ PhishGuard AI
 
 > **Hệ thống phát hiện website lừa đảo (phishing) sử dụng Machine Learning**
@@ -423,6 +422,3 @@ Dự án này được phát hành dưới giấy phép **MIT License** - xem fi
 ---
 
 > **⚡ Quick Start**: Chạy `backend/main.py` và `frontend/npm run dev` sau khi đã train xong mô hình!
-=======
-# phishguard-ai
->>>>>>> e6cb80336084e5fb6abffffdd0612aa1ff4281fe
