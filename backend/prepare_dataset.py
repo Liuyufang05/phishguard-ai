@@ -1,140 +1,119 @@
-
-import requests
-import pandas as pd
-import zipfile
 import io
+import zipfile
+from datetime import datetime, timezone
 from pathlib import Path
 
-# Đường dẫn thư mục dataset ở thư mục gốc
+import pandas as pd
+import requests
+
+
 BASE_DIR = Path(__file__).resolve().parent.parent
 DATA_DIR = BASE_DIR / "dataset"
-DATA_DIR.mkdir(exist_ok=True)
+PHISHING_FEED_URL = "https://openphish.com/feed.txt"
+TRANCO_ARCHIVE_URL = "https://tranco-list.eu/top-1m.csv.zip"
+MAX_PER_CLASS = 300
+MIN_PER_CLASS = 50
 
-print("=== PHISHGUARD AI - DATA COLLECTION ===")
 
-# --------------------------------
-# 1. Thu thập URL phishing
-# --------------------------------
+def build_dataset(phishing_urls, benign_urls, collected_at=None):
+    phishing_urls = list(dict.fromkeys(
+        str(url).strip()
+        for url in phishing_urls
+        if str(url).strip().startswith(("http://", "https://"))
+    ))
+    benign_urls = list(dict.fromkeys(
+        str(url).strip()
+        for url in benign_urls
+        if str(url).strip()
+    ))
 
-print("\n[1] Dang tai URL phishing...")
-
-phishing_source = "https://openphish.com/feed.txt"
-
-response = requests.get(
-    phishing_source,
-    timeout=30
-)
-response.raise_for_status()
-
-phishing_urls = list(dict.fromkeys(
-    line.strip()
-    for line in response.text.splitlines()
-    if line.strip().startswith(("http://", "https://"))
-))
-
-print("So URL phishing:", len(phishing_urls))
-
-# --------------------------------
-# 2. Thu thập tên miền Tranco
-# --------------------------------
-
-print("\n[2] Dang tai danh sach Tranco...")
-
-tranco_source = "https://tranco-list.eu/top-1m.csv.zip"
-
-response = requests.get(
-    tranco_source,
-    timeout=60
-)
-response.raise_for_status()
-
-with zipfile.ZipFile(io.BytesIO(response.content)) as archive:
-
-    csv_file = next(
-        name for name in archive.namelist()
-        if name.endswith(".csv")
+    sample_size = min(
+        MAX_PER_CLASS,
+        len(phishing_urls),
+        len(benign_urls),
     )
-
-    with archive.open(csv_file) as file:
-        tranco_df = pd.read_csv(
-            file,
-            header=None,
-            names=["rank", "domain"]
+    if sample_size < MIN_PER_CLASS:
+        raise ValueError(
+            "Du lieu qua it. Can toi thieu 50 URL cho moi nhan."
         )
 
-benign_urls = [
-    "https://" + domain
-    for domain in tranco_df["domain"].dropna()
-    if isinstance(domain, str)
-]
+    collected_at = collected_at or datetime.now(timezone.utc).isoformat(
+        timespec="seconds"
+    )
+    phishing_df = pd.DataFrame({
+        "url": phishing_urls[:sample_size],
+        "label": 1,
+        "source": "OpenPhish",
+        "collected_at": collected_at,
+    })
+    benign_df = pd.DataFrame({
+        "url": benign_urls[:sample_size],
+        "label": 0,
+        "source": "Tranco",
+        "collected_at": collected_at,
+    })
+    dataset = pd.concat([phishing_df, benign_df], ignore_index=True)
 
-# --------------------------------
-# 3. Cân bằng dữ liệu
-# --------------------------------
+    conflicting_urls = dataset.groupby("url")["label"].nunique().gt(1)
+    if conflicting_urls.any():
+        raise ValueError(
+            "Nguon du lieu gan nhan mau thuan cho cung mot URL."
+        )
 
-print("\n[3] Dang xu ly du lieu...")
-
-# Loại bỏ URL trùng lặp
-phishing_urls = list(dict.fromkeys(phishing_urls))
-benign_urls = list(dict.fromkeys(benign_urls))
-
-# Giới hạn mỗi lớp tối đa 300 URL
-number = min(
-    300,
-    len(phishing_urls),
-    len(benign_urls)
-)
-
-if number < 50:
-    raise ValueError(
-        "Du lieu qua it. Hay kiem tra lai nguon tai du lieu."
+    return (
+        dataset.drop_duplicates(subset=["url"])
+        .sample(frac=1, random_state=42)
+        .reset_index(drop=True)
     )
 
-# Lấy mẫu dữ liệu
-phishing_urls = phishing_urls[:number]
-benign_urls = benign_urls[:number]
 
-# Tạo DataFrame
-phishing_df = pd.DataFrame({
-    "url": phishing_urls,
-    "label": 1,
-    "source": "OpenPhish"
-})
+def main():
+    print("=== PHISHGUARD AI - DATA COLLECTION ===")
+    print("\n[1] Dang tai URL phishing...")
+    phishing_response = requests.get(PHISHING_FEED_URL, timeout=30)
+    phishing_response.raise_for_status()
+    phishing_urls = [
+        line.strip()
+        for line in phishing_response.text.splitlines()
+        if line.strip().startswith(("http://", "https://"))
+    ]
+    print("So URL phishing:", len(phishing_urls))
 
-benign_df = pd.DataFrame({
-    "url": benign_urls[:number],
-    "label": 0,
-    "source": "Tranco"
-})
+    print("\n[2] Dang tai danh sach Tranco...")
+    tranco_response = requests.get(TRANCO_ARCHIVE_URL, timeout=60)
+    tranco_response.raise_for_status()
+    with zipfile.ZipFile(io.BytesIO(tranco_response.content)) as archive:
+        csv_file = next(
+            name for name in archive.namelist()
+            if name.endswith(".csv")
+        )
+        with archive.open(csv_file) as file:
+            tranco_df = pd.read_csv(
+                file,
+                header=None,
+                names=["rank", "domain"],
+            )
 
-dataset = pd.concat(
-    [phishing_df, benign_df],
-    ignore_index=True
-)
+    benign_urls = [
+        "https://" + domain
+        for domain in tranco_df["domain"].dropna()
+        if isinstance(domain, str)
+    ]
 
-dataset = dataset.drop_duplicates(
-    subset=["url"]
-)
+    print("\n[3] Dang lam sach va gan provenance...")
+    dataset = build_dataset(phishing_urls, benign_urls)
+    DATA_DIR.mkdir(exist_ok=True)
+    output_file = DATA_DIR / "url_dataset.csv"
+    dataset.to_csv(output_file, index=False, encoding="utf-8")
 
-dataset = dataset.sample(
-    frac=1,
-    random_state=42
-).reset_index(drop=True)
+    print("\n=== HOAN THANH ===")
+    print("Tong so URL:", len(dataset))
+    print("\nThong ke nhan:")
+    print(dataset["label"].value_counts())
+    print("\nThong ke nguon:")
+    print(pd.crosstab(dataset["source"], dataset["label"]))
+    print("\nFile da luu:", output_file)
 
-# --------------------------------
-# 4. Lưu dữ liệu
-# --------------------------------
 
-output_file = DATA_DIR / "url_dataset.csv"
-
-dataset.to_csv(
-    output_file,
-    index=False,
-    encoding="utf-8"
-)
-
-print("\n=== HOAN THANH ===")
-print("Tong so URL:", len(dataset))
-print("\nThong ke nhan:")
-print(dataset["label"].value_counts())
-print("\nFile da luu:", output_file)
+if __name__ == "__main__":
+    main()

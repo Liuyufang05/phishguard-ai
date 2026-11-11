@@ -168,10 +168,16 @@ def scan_url(request: ScanRequest):
 
     # 4. Kiem tra cau truc goi mo hinh
     try:
-        feature_names = model_package["feature_names"]
+        input_type = model_package.get("input_type", "url_features")
+        feature_names = model_package.get("feature_names", [])
         model = model_package["model"]
 
-        if not feature_names or not isinstance(feature_names, list):
+        if input_type not in {"url_features", "url_text"}:
+            raise ValueError("Loai dau vao mo hinh khong hop le.")
+
+        if input_type == "url_features" and (
+            not feature_names or not isinstance(feature_names, list)
+        ):
             raise ValueError("Danh sach dac trung khong hop le.")
 
         if not hasattr(model, "predict_proba"):
@@ -187,21 +193,24 @@ def scan_url(request: ScanRequest):
     try:
         features = extract_features(url)
 
-        missing_features = [
-            name for name in feature_names
-            if name not in features
-        ]
+        if input_type == "url_text":
+            input_data = [url]
+        else:
+            missing_features = [
+                name for name in feature_names
+                if name not in features
+            ]
 
-        if missing_features:
-            raise ValueError("Thieu dac trung dau vao.")
+            if missing_features:
+                raise ValueError("Thieu dac trung dau vao.")
 
-        input_data = pd.DataFrame(
-            [[features[name] for name in feature_names]],
-            columns=feature_names
-        )
+            input_data = pd.DataFrame(
+                [[features[name] for name in feature_names]],
+                columns=feature_names
+            )
 
-        if input_data.isnull().values.any():
-            raise ValueError("Du lieu dac trung chua hop le.")
+            if input_data.isnull().values.any():
+                raise ValueError("Du lieu dac trung chua hop le.")
 
     except Exception:
         logger.exception("Loi khi trich xuat dac trung URL")
@@ -287,8 +296,16 @@ def model_info():
     return {
         "model_name": model_package["model_name"],
         "version": model_package["version"],
-        "features": model_package["feature_names"],
+        "features": model_package.get("feature_names", []),
         "number_of_features": len(
-            model_package["feature_names"]
-        )
+            model_package.get("feature_names", [])
+        ),
+        "input_type": model_package.get("input_type", "url_features"),
+        "evaluation": model_package.get("evaluation"),
+        "evaluation_strategy": model_package.get("evaluation_strategy"),
+        "probability_calibration": model_package.get(
+            "probability_calibration"
+        ),
+        "data_sources": model_package.get("data_sources", []),
+        "data_warnings": model_package.get("data_warnings", []),
     }

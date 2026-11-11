@@ -26,3 +26,6 @@ frontend/dist/
 
 # Cloudflare development state
 .wrangler/
+
+# Unvalidated model candidate
+models/phishguard_candidate.pkl

@@ -28,8 +28,9 @@ PhishGuard AI là một dự án nghiên cứu sử dụng trí tuệ nhân tạ
 - Phân tích không cần truy cập trực tiếp vào website (an toàn, nhanh chóng)
 
 ### 🤖 Machine Learning
-- So sánh 4 thuật toán: **Logistic Regression**, **Decision Tree**, **Random Forest**, **SVM**
-- Tự động chọn mô hình tốt nhất dựa trên Recall và F1-score
+- So sánh mô hình trên đặc trưng URL, character n-gram và mô hình kết hợp
+- Đánh giá chéo theo hostname để hạn chế rò rỉ giữa tập huấn luyện và kiểm tra
+- Theo dõi Precision, Recall, F1, ROC-AUC, PR-AUC, tỷ lệ báo động giả và Brier score
 - Đánh giá rủi ro 3 mức: **High** (≥70%), **Medium** (40-69%), **Low** (<40%)
 
 ### 📊 Dashboard trực quan
@@ -87,6 +88,7 @@ PhishGuard AI là một dự án nghiên cứu sử dụng trí tuệ nhân tạ
 ### Nguồn dữ liệu huấn luyện
 - **Phishing URLs**: [OpenPhish](https://openphish.com/) - Feed URL lừa đảo thực tế
 - **Benign URLs**: [Tranco List](https://tranco-list.eu/) - Top 1M tên miền phổ biến
+- Dataset tạo mới lưu nguồn (`source`) và thời điểm thu thập (`collected_at`) để hỗ trợ rà soát thiên lệch nguồn.
 
 ---
 
@@ -135,11 +137,13 @@ pip install -r ../requirements.txt
 # Bước 1: Thu thập dữ liệu (tự động tải từ OpenPhish và Tranco)
 python prepare_dataset.py
 
-# Bước 2: Huấn luyện mô hình (so sánh 4 thuật toán, chọn mô hình tốt nhất)
+# Bước 2: So sánh 6 mô hình/pipeline bằng hostname-grouped cross-validation
 python train_model.py
 ```
 
-Sau khi chạy xong, sẽ tạo ra file `models/phishguard_model.pkl`
+Sau khi chạy xong, mô hình ứng viên được lưu tại
+`models/phishguard_candidate.pkl`; bảng số liệu lưu tại
+`models/model_comparison.csv`. Mô hình production không bị ghi đè.
 
 ### 4. Chạy Backend API
 
@@ -228,9 +232,10 @@ PhishGuard-AI/
 │   ├── main.py                  # FastAPI application entry point
 │   ├── feature_extractor.py     # Trích xuất 14 đặc trưng từ URL
 │   ├── prepare_dataset.py       # Thu thập dữ liệu từ OpenPhish + Tranco
-│   ├── train_model.py           # Huấn luyện và so sánh 4 mô hình ML
+│   ├── train_model.py           # So sánh 6 mô hình/pipeline
 │   ├── test_api.py              # Test API endpoints
 │   ├── test_features.py         # Test feature extractor
+│   ├── test_training.py         # Test chia nhóm và pipeline mô hình
 │   └── __init__.py
 ├── frontend/
 │   ├── node_modules/            # Dependencies npm
@@ -332,16 +337,28 @@ Content-Type: application/json
 ### Quy trình tự động (`train_model.py`)
 
 1. **Đọc dữ liệu** từ `dataset/url_dataset.csv`
-2. **Trích xuất đặc trưng** cho mỗi URL (14 features)
-3. **Chia dữ liệu** 80% train / 20% test (stratified)
-4. **Huấn luyện 4 mô hình**:
+2. **Làm sạch dữ liệu**: bỏ nhãn lỗi, URL rỗng và URL trùng; từ chối URL bị gán nhãn mâu thuẫn
+3. **Chia dữ liệu** bằng 5-fold stratified cross-validation, nhóm theo hostname; trong mỗi training fold, xác suất được hiệu chỉnh sigmoid bằng 3-fold hostname-group CV để giữ hostname tách biệt
+4. **So sánh 6 mô hình/pipeline**:
    - Logistic Regression (với StandardScaler)
    - Decision Tree (max_depth=10)
-   - **Random Forest** (n_estimators=200, max_depth=15) ⭐
+   - Random Forest (n_estimators=200, max_depth=15)
    - SVM RBF (với StandardScaler)
-5. **Đánh giá** bằng: Accuracy, Precision, Recall, F1-score, ROC-AUC
-6. **Chọn mô hình tốt nhất** dựa trên Recall và F1-score
-7. **Lưu mô hình** vào `models/phishguard_model.pkl`
+   - Logistic Regression trên character n-gram TF-IDF
+   - Mô hình kết hợp character n-gram và 14 đặc trưng URL
+5. **Đánh giá** dựa trên dự đoán out-of-fold sau hiệu chỉnh bằng Accuracy, Precision, Recall, F1, ROC-AUC, PR-AUC, false-positive rate và Brier score
+6. **Chọn mô hình** theo F1, sau đó Recall/Precision/PR-AUC
+7. **Rà soát provenance**: cảnh báo nếu thiếu nguồn hoặc mỗi nguồn chỉ gắn với một nhãn
+8. **Lưu mô hình ứng viên** vào `models/phishguard_candidate.pkl` và bảng so sánh vào `models/model_comparison.csv`; không tự ghi đè mô hình production
+
+Chỉ thay `models/phishguard_model.pkl` sau khi xác nhận ứng viên hoạt động với
+API và đánh giá độc lập trên dữ liệu mới. File ứng viên được giữ ngoài Git để
+tránh vô tình deploy mô hình chưa được duyệt.
+
+Kết quả cross-validation hỗ trợ so sánh mô hình, không thay thế đánh giá độc lập
+trên dữ liệu mới. Dữ liệu huấn luyện hiện tại lấy phishing và benign từ các nguồn
+khác nhau, vì vậy cần bổ sung nguồn đa dạng và kiểm tra nhãn trước khi dùng kết
+quả làm cam kết hiệu quả production.
 
 ### Đặc trưng được trích xuất (`feature_extractor.py`)
 
@@ -367,7 +384,7 @@ Content-Type: application/json
 ```bash
 cd backend
 python prepare_dataset.py  # Cập nhật dữ liệu mới
-python train_model.py      # Train lại mô hình
+python train_model.py      # So sánh mô hình bằng grouped cross-validation
 ```
 
 ---
@@ -384,6 +401,11 @@ python test_features.py
 ```bash
 cd backend
 python test_api.py
+```
+
+### Test training pipeline
+```bash
+python -m unittest backend.test_training
 ```
 
 ### Test thủ công với curl
