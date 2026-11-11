@@ -93,7 +93,7 @@ PhishGuard AI là một dự án nghiên cứu sử dụng trí tuệ nhân tạ
 ## 💻 Yêu cầu hệ thống
 
 - **Python** 3.10 trở lên
-- **Node.js** 18 trở lên
+- **Node.js** 20.19+ hoặc 22.12+ (theo yêu cầu của Vite 8)
 - **npm** hoặc **yarn**
 - **Git** (tùy chọn)
 
@@ -122,10 +122,10 @@ venv\Scripts\activate
 source venv/bin/activate
 
 # Cài đặt dependencies
-pip install fastapi uvicorn scikit-learn pandas joblib python-dotenv requests
+pip install -r ../requirements.txt
 ```
 
-> **Lưu ý**: Nếu đã có `requirements.txt`, có thể dùng `pip install -r requirements.txt`
+> **Lưu ý**: `requirements.txt` nằm ở thư mục gốc repository.
 
 ### 3. Chuẩn bị dữ liệu và huấn luyện mô hình
 
@@ -144,10 +144,8 @@ Sau khi chạy xong, sẽ tạo ra file `models/phishguard_model.pkl`
 ### 4. Chạy Backend API
 
 ```bash
-# Tại thư mục backend/
-python main.py
-# Hoặc dùng uvicorn trực tiếp:
-uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+# Tại thư mục gốc repository
+uvicorn backend.main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
 Backend sẽ chạy tại: **http://localhost:8000**
@@ -176,10 +174,41 @@ Frontend sẽ chạy tại: **http://localhost:5173**
 cd frontend
 npm run build
 
-# Backend - chạy với uvicorn production
-cd backend
-uvicorn main:app --host 0.0.0.0 --port 8000
+# Backend - quay về thư mục gốc repository
+cd ..
+uvicorn backend.main:app --host 0.0.0.0 --port 8000
 ```
+
+---
+
+## ☁️ Deploy
+
+Frontend được deploy trên Cloudflare Pages; backend FastAPI chạy riêng trên Render.
+
+### Backend (Render)
+
+Render cần dùng thư mục gốc của repository, cài dependencies bằng
+`pip install -r requirements.txt` và chạy:
+
+```bash
+uvicorn backend.main:app --host 0.0.0.0 --port $PORT
+```
+
+Sau khi deploy, kiểm tra `/api/health`; kết quả cần có `model_loaded: true`.
+Khi đổi địa chỉ frontend, cập nhật origin đó trong cấu hình CORS của
+`backend/main.py`.
+
+### Frontend (Cloudflare Pages)
+
+- Git provider: GitHub repository này, nhánh `main`
+- Root directory: `frontend`
+- Build command: `npm run build`
+- Build output directory: `dist`
+- Node.js: `20.19+` hoặc `22.12+`
+
+`frontend/.env.production` đặt URL API công khai cho production; URL này không
+phải secret. Nếu thay backend, cập nhật biến `VITE_API_URL` trong file đó rồi
+build/deploy lại. Không dùng URL `localhost` trong bản production.
 
 ---
 

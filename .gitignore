@@ -1,0 +1,28 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.venv/
+venv/
+.pytest_cache/
+
+# Environment files
+.env
+.env.*
+!.env.example
+frontend/.env
+frontend/.env.*
+!frontend/.env.example
+!frontend/.env.production
+
+# Runtime logs
+logs/
+*.log
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+
+# Cloudflare development state
+.wrangler/
